@@ -15,6 +15,7 @@ import time
 from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
+import torch
 
 # Cấu hình logging
 logging.basicConfig(

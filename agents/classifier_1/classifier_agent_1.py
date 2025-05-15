@@ -4,6 +4,7 @@ from typing import Dict, List, Union, Any
 from dataclasses import dataclass
 from PIL import Image
 import numpy as np
+from ultralytics import YOLO
 
 # Configure logging
 logging.basicConfig(
@@ -16,6 +17,7 @@ logger = logging.getLogger("MedClassifierAgent1")
 class ClassifierConfig1:
     """Configuration for the Medical Classifier Agent 1."""
     model_path: str
+    name: str = "MedicalClassifierAgent1"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     confidence_threshold: float = 0.5
     num_classes: int = 10
@@ -30,11 +32,12 @@ class MedicalClassifierAgent1:
     def __init__(self, config: ClassifierConfig1):
         """Initialize the Medical Classifier Agent 1."""
         self.config = config
+        self.name = config.name
         self.device = torch.device(config.device)
         logger.info(f"Initializing Medical Classifier Agent 1 on device: {self.device}")
         
-        # Load classification model
-        self._load_model()
+        # Agent initialization state
+        self.initialized = False
         
         # Initialize metrics
         self.metrics = {
@@ -43,13 +46,35 @@ class MedicalClassifierAgent1:
             "avg_confidence": 0.0,
             "avg_inference_time": 0.0
         }
+        
+        # Define class names (should be set externally if needed)
+        self.class_names = []
+
+    def initialize(self) -> bool:
+        """
+        Initialize the agent by loading the model and resources.
+        
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            # Load the classification model
+            self._load_model()
+            
+            # Mark as initialized
+            self.initialized = True
+            logger.info(f"{self.name} initialized successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize {self.name}: {str(e)}")
+            return False
 
     def _load_model(self):
         """Load the classification model."""
         try:
             logger.info(f"Loading classification model from {self.config.model_path}")
             # Load your preferred classification model here (e.g., ResNet, EfficientNet)
-            # self.model = ...
+            self.model = YOLO(self.config.model_path)
             logger.info("Model loaded successfully")
         except Exception as e:
             logger.error(f"Failed to load model: {str(e)}")
@@ -116,4 +141,48 @@ class MedicalClassifierAgent1:
         import json
         with open(output_path, 'w') as f:
             json.dump(self.metrics, f, indent=2)
-        logger.info(f"Metrics exported to {output_path}") 
+        logger.info(f"Metrics exported to {output_path}")
+
+    def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Process an image for classification.
+        
+        Args:
+            input_data: Dictionary containing the input data with at least 'image_path' key
+            
+        Returns:
+            Dict containing classification results and metadata
+        """
+        if not self.initialized:
+            return {"success": False, "error": "Agent has not been initialized"}
+        
+        # Extract image path
+        image_path = input_data.get("image_path")
+        if not image_path:
+            return {"success": False, "error": "No image_path provided in input_data"}
+        
+        try:
+            # Classify the image
+            result = self.classify(image_path)
+            
+            # Add standard fields
+            result["success"] = "error" not in result
+            
+            # Add specific class info if available
+            if result.get("top_prediction") and self.class_names:
+                class_id = result["top_prediction"].get("class_id", 0)
+                confidence = result["top_prediction"].get("confidence", 0.0)
+                
+                if 0 <= class_id < len(self.class_names):
+                    result["class_id"] = class_id
+                    result["class_name"] = self.class_names[class_id]
+                    result["confidence"] = confidence
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Process failed: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e)
+            } 

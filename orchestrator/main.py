@@ -26,11 +26,20 @@ logging.basicConfig(
 )
 
 # Import các agent
-from agents.detector import MedicalDetectorAgent, DetectorConfig
+from agents.detector import DetectorAgent, DetectorAgentConfig
 from agents.classifier_1 import MedicalClassifierAgent1, ClassifierConfig1
 from agents.classifier_2 import MedicalClassifierAgent2, ClassifierConfig2
 from agents.vqa import MedicalVQAAgent, VQAAgentConfig
-from agents.rag import MedicalRAGAgent, RAGConfig
+# from agents.rag import MedicalRAGAgent, RAGConfig  # RAG Agent tạm thời bị vô hiệu hóa do lỗi thư viện
+
+try:
+    from agents.rag import MedicalRAGAgent, RAGConfig
+except ImportError:
+    # Tạo class giả để tránh lỗi
+    class RAGConfig:
+        pass
+    class MedicalRAGAgent:
+        pass
 
 # Import LLM client cho reflection
 from memory.vector_store import VectorStore
@@ -833,13 +842,13 @@ if __name__ == "__main__":
     orchestrator = MedicalOrchestrator(config)
     
     # Khởi tạo và đăng ký các agents
-    from agents.detector import MedicalDetectorAgent, DetectorConfig
-    detector_config = DetectorConfig(
+    from agents.detector import DetectorAgent, DetectorAgentConfig
+    detector_config = DetectorAgentConfig(
         name="Polyp Detector",
         model_path="models/yolov8n.pt",  # Thay đổi đường dẫn model nếu cần
         confidence_threshold=0.3
     )
-    detector = MedicalDetectorAgent(detector_config)
+    detector = DetectorAgent(detector_config)
     detector.initialize()
     orchestrator.register_agent("detector", detector)
     

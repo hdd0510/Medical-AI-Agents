@@ -1,3 +1,4 @@
-from .detector_agent import MedicalDetectorAgent, DetectorConfig
 
-__all__ = ['MedicalDetectorAgent', 'DetectorConfig'] 
+from .detector_agent import DetectorAgent, DetectorAgentConfig
+
+__all__ = ['DetectorAgent', 'DetectorAgentConfig'] 

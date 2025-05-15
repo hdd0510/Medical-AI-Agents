@@ -25,6 +25,8 @@ from agents.base_agent import BaseAgent, BaseAgentConfig
 class VQAAgentConfig(BaseAgentConfig):
     """Cấu hình cho VQA Agent."""
     # Tham số model
+    model_path: str
+    name: str = "MedicalVQAAgent"
     max_new_tokens: int = 512
     temperature: float = 0.1
     top_p: float = 0.7
@@ -112,16 +114,13 @@ class MedicalVQAAgent(BaseAgent):
     def initialize(self) -> bool:
         """
         Khởi tạo VQA Agent, tải model LLaVA-Med.
-        
-        Returns:
-            bool: True nếu khởi tạo thành công, False nếu thất bại
         """
         try:
-            self.logger.info(f"Đang tải model LLaVA-Med từ {self.vqa_config.model_path}")
+            self.logger.info(f"Đang tải model LLaVA-Med từ thư mục {self.vqa_config.model_path}")
             
-            # Kiểm tra xem model_path có tồn tại không
-            if not os.path.exists(self.vqa_config.model_path) and not self.vqa_config.model_path.startswith(("http://", "https://")):
-                self.logger.warning(f"Không tìm thấy model tại {self.vqa_config.model_path}. Kiểm tra lại đường dẫn.")
+            # Kiểm tra thư mục model
+            if not os.path.exists(self.vqa_config.model_path):
+                self.logger.warning(f"Không tìm thấy thư mục model tại {self.vqa_config.model_path}")
             
             # Import các thư viện cần thiết
             try:
@@ -129,8 +128,10 @@ class MedicalVQAAgent(BaseAgent):
                 from llava.mm_utils import get_model_name_from_path
                 from llava.conversation import conv_templates
                 
-                # Tải model LLaVA-Med
-                model_name = get_model_name_from_path(self.vqa_config.model_path)
+                # Giả định model_name từ tên thư mục
+                model_name = os.path.basename(self.vqa_config.model_path.rstrip('/'))
+                
+                # Tải model LLaVA-Med từ thư mục
                 self.tokenizer, self.model, self.image_processor, self.context_len = \
                     load_pretrained_model(self.vqa_config.model_path, model_name, self.device)
                 
@@ -140,18 +141,18 @@ class MedicalVQAAgent(BaseAgent):
                 self.logger.info(f"Model LLaVA-Med đã được tải thành công trên thiết bị {self.device}")
                 self.initialized = True
                 return True
-                
+                    
             except ImportError as e:
                 self.logger.error(f"Không thể import các module cần thiết: {str(e)}")
                 self.logger.error("Vui lòng cài đặt llava-med và các dependency: pip install llava")
                 return False
-                
+                    
         except Exception as e:
             self.logger.error(f"Lỗi khi khởi tạo VQA Agent: {str(e)}")
             import traceback
             self.logger.error(traceback.format_exc())
             return False
-    
+        
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Xử lý yêu cầu VQA.

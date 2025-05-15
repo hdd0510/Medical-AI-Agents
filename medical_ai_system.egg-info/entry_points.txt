@@ -1,0 +1,2 @@
+[console_scripts]
+medical-ai-service = medical_ai_system.cli:main

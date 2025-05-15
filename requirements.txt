@@ -1,0 +1,51 @@
+# Medical AI System - Requirements
+# Các thư viện cần thiết cho hệ thống AI y tế đa agent
+
+# Core libraries
+numpy==1.24.3
+pillow==9.5.0
+scipy==1.10.1
+matplotlib==3.7.1
+pandas==2.0.3
+
+# Deep learning frameworks
+torch==2.0.1
+torchvision==0.15.2
+transformers==4.30.2
+
+# Computer vision
+opencv-python==4.8.0.74
+albumentations==1.3.0
+scikit-image==0.20.0
+
+# LLM & NLP
+openai==1.3.5
+langchain==0.0.308
+tiktoken==0.5.1
+sentence-transformers==2.2.2
+
+# Vector database
+faiss-cpu==1.7.4
+chromadb==0.4.13
+
+# Testing
+pytest==7.4.0
+pytest-cov==4.1.0
+
+# API & Services
+fastapi==0.100.0
+uvicorn==0.22.0
+pydantic==2.1.1
+
+# Utilities
+tqdm==4.65.0
+PyYAML==6.0.1
+python-dotenv==1.0.0
+psutil==5.9.5
+loguru==0.7.0
+tenacity==8.2.2
+
+# Monitoring & Logging
+tensorboard==2.13.0
+mlflow==2.6.0
+
