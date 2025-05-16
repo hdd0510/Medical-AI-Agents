@@ -38,6 +38,10 @@ medical_ai_system.egg-info/dependency_links.txt
 medical_ai_system.egg-info/entry_points.txt
 medical_ai_system.egg-info/requires.txt
 medical_ai_system.egg-info/top_level.txt
+orchestrator/__init__.py
+orchestrator/main.py
+orchestrator/reflexion.py
 tests/test_agents.py
 tests/test_integration.py
+tests/test_orchestration_demo.py
 tests/test_orchestrator.py

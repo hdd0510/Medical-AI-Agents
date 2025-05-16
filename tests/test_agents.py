@@ -270,7 +270,7 @@ class VQAAgentTest(unittest.TestCase):
         self.assertEqual(self.agent.name, "MedicalVQAAgent")
         self.assertEqual(self.agent.vqa_config.max_new_tokens, 512)
         self.assertEqual(self.agent.vqa_config.model_path, VQA_MODEL_WEIGHTS)
-    
+        
     def test_process_image_question(self):
         """Kiểm tra process hình ảnh với câu hỏi."""
         # Tạo ảnh test
