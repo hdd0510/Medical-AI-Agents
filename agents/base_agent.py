@@ -1,256 +1,295 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
+from abc import ABC, abstractmethod
+from typing import Dict, List, Any
 
-"""
-Base Agent
-----------
-Lớp trừu tượng cơ sở cho tất cả các agent trong hệ thống y tế AI.
-"""
-
-import os
-import sys
-import json
 import logging
 import time
-from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, field
-import torch
-
-# Cấu hình logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-
-@dataclass
-class BaseAgentConfig:
-    """Cấu hình cơ sở cho tất cả các agent."""
-    name: str
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    logging_level: str = "INFO"
-    metrics_enabled: bool = True
-    memory_enabled: bool = True
-    inference_monitoring: bool = True
-    confidence_threshold: float = 0.7
-    
-    # Đường dẫn cho các model và tài nguyên
-    model_path: str = None
-    resources_path: str = None
-    
-    # Các tham số khác
-    additional_params: Dict[str, Any] = field(default_factory=dict)
-    
-    def __post_init__(self):
-        """Kiểm tra và thiết lập sau khi khởi tạo."""
-        # Thiết lập logging level
-        numeric_level = getattr(logging, self.logging_level, None)
-        if not isinstance(numeric_level, int):
-            raise ValueError(f"Invalid logging level: {self.logging_level}")
-
+import json
 
 class BaseAgent(ABC):
     """
-    Lớp cơ sở trừu tượng cho tất cả các agent trong hệ thống.
-    
-    Định nghĩa interface chung và chức năng mà tất cả các agent phải triển khai.
+    Base class for all agents with GPT-like reasoning interface.
+    Each specialized agent inherits from this and implements their specific logic.
     """
     
-    def __init__(self, config: BaseAgentConfig):
-        """
-        Khởi tạo agent cơ sở.
+    def __init__(self, 
+                name: str,
+                system_prompt: str,
+                llm_client,
+                tools: List[Tool] = None,
+                memory_enabled: bool = True,
+                device: str = "cuda"):
         
-        Args:
-            config: Cấu hình cho agent
-        """
-        self.config = config
-        self.name = config.name
-        self.device = config.device
+        self.name = name
+        self.system_prompt = system_prompt
+        self.llm_client = llm_client
+        self.tools = tools or []
+        self.memory_enabled = memory_enabled
+        self.device = device
         self.logger = logging.getLogger(f"agent.{self.name.lower().replace(' ', '_')}")
-        self.logger.setLevel(getattr(logging, config.logging_level))
-        
-        # Trạng thái khởi tạo
-        self.initialized = False
-        
-        # Bộ nhớ ngắn hạn cho agent
-        self.short_term_memory = {}
-        
-        # Metrics
+        self.cache = {}
         self.metrics = {
             "total_requests": 0,
             "successful_requests": 0,
-            "failed_requests": 0,
-            "total_processing_time": 0,
+            "tool_usages": {},
             "avg_processing_time": 0,
-            "high_confidence_count": 0,
-            "low_confidence_count": 0
+            "total_processing_time": 0
         }
-        
-        self.logger.info(f"Khởi tạo {self.name} với cấu hình: {self.config}")
     
-    @abstractmethod
-    def initialize(self) -> bool:
-        """
-        Khởi tạo agent, tải model và các tài nguyên cần thiết.
+    def register_tool(self, tool: Tool):
+        """Register a new tool for this agent to use."""
+        self.tools.append(tool)
+        self.metrics["tool_usages"][tool.name] = 0
         
-        Returns:
-            bool: True nếu khởi tạo thành công, False nếu thất bại
-        """
-        pass
-    
-    @abstractmethod
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Xử lý dữ liệu đầu vào và trả về kết quả.
+        Process a request using agent's reasoning and tools.
         
         Args:
-            input_data: Dict chứa dữ liệu đầu vào cụ thể cho agent
+            input_data: Dictionary containing input including query, image paths, etc.
             
         Returns:
-            Dict chứa kết quả xử lý
-        """
-        pass
-    
-    def run_with_monitoring(self, func, *args, **kwargs) -> Dict[str, Any]:
-        """
-        Chạy một hàm với giám sát thời gian và thành công.
-        
-        Args:
-            func: Hàm cần chạy
-            *args: Tham số vị trí cho hàm
-            **kwargs: Tham số từ khóa cho hàm
-            
-        Returns:
-            Kết quả của hàm
+            Dictionary with processed results and metadata
         """
         start_time = time.time()
-        success = True
-        result = None
+        self.metrics["total_requests"] += 1
         
         try:
-            # Chạy hàm
-            result = func(*args, **kwargs)
+            # 1. Create agent prompt with tools description
+            full_prompt = self._create_agent_prompt(input_data)
             
-            # Đánh giá độ tin cậy nếu có
-            if isinstance(result, dict) and "confidence" in result:
-                confidence = result["confidence"]
-                if confidence >= self.config.confidence_threshold:
-                    self.metrics["high_confidence_count"] += 1
-                else:
-                    self.metrics["low_confidence_count"] += 1
-                    
-                    # Log cảnh báo nếu độ tin cậy thấp
-                    self.logger.warning(f"Kết quả có độ tin cậy thấp: {confidence}")
-                    
-                    # Đánh dấu trong kết quả
-                    result["low_confidence_warning"] = True
+            # 2. Get reasoning and tool calls from LLM
+            reasoning_result = self._reason(full_prompt)
+            
+            # 3. Execute tool calls if any
+            if "tool_calls" in reasoning_result:
+                results = self._execute_tool_calls(reasoning_result["tool_calls"], input_data)
+                reasoning_result["tool_results"] = results
+            
+            # 4. Get final answer from LLM using reasoning and tool results
+            final_result = self._synthesize_answer(reasoning_result, input_data)
+            
+            # Record success and timing
+            self.metrics["successful_requests"] += 1
+            processing_time = time.time() - start_time
+            self.metrics["total_processing_time"] += processing_time
+            self.metrics["avg_processing_time"] = (
+                self.metrics["total_processing_time"] / self.metrics["total_requests"]
+            )
+            
+            # Add metadata to result
+            final_result["success"] = True
+            final_result["processing_time"] = processing_time
+            
+            return final_result
             
         except Exception as e:
-            success = False
-            self.logger.error(f"Lỗi trong {func.__name__}: {str(e)}")
-            result = {"error": str(e), "success": False}
+            self.logger.error(f"Error in {self.name}: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             
-        finally:
-            # Cập nhật metrics
             processing_time = time.time() - start_time
-            self._update_metrics(processing_time, success)
-            
-            # Thêm thông tin timing vào kết quả nếu là dict
-            if result is not None and isinstance(result, dict):
-                result["processing_time"] = processing_time
-                result["success"] = success
-                
-            return result
+            return {
+                "success": False,
+                "error": str(e),
+                "processing_time": processing_time
+            }
     
-    def _update_metrics(self, processing_time: float, success: bool):
+    def _create_agent_prompt(self, input_data: Dict[str, Any]) -> str:
+        """Create the prompt for the agent with context and tools."""
+        # Start with system prompt
+        prompt = self.system_prompt
+        
+        # Add tools information
+        tools_description = "\n\nAvailable Tools:\n"
+        for tool in self.tools:
+            spec = tool.get_spec()
+            tools_description += f"\n- {spec['name']}: {spec['description']}\n"
+            tools_description += f"  Parameters: {json.dumps(spec['parameters'], indent=2)}\n"
+            tools_description += f"  Returns: {json.dumps(spec['returns'], indent=2)}\n"
+        
+        prompt += tools_description
+        
+        # Add format instructions
+        prompt += """
+        \nResponse Format:
+        {
+            "reasoning": "Your step-by-step reasoning about the problem",
+            "tool_calls": [
+                {
+                    "tool_name": "name_of_tool_to_use",
+                    "parameters": {
+                        "param1": "value1",
+                        "param2": "value2"
+                    }
+                }
+            ],
+            "answer": "Your final answer based on reasoning and tool results"
+        }
+        
+        If you don't need to use any tools, you can omit the "tool_calls" field.
         """
-        Cập nhật metrics hiệu suất của agent.
+        
+        # Add query/input specific information
+        prompt += f"\n\nCurrent Request:\n{json.dumps(input_data, indent=2)}"
+        
+        return prompt
+    
+    def _reason(self, prompt: str) -> Dict[str, Any]:
+        """
+        Use LLM to reason about the problem and decide which tools to use.
         
         Args:
-            processing_time: Thời gian xử lý (giây)
-            success: Thành công hay thất bại
+            prompt: The complete prompt with tools info and query
+            
+        Returns:
+            Dictionary with reasoning and tool calls
         """
-        if not self.config.metrics_enabled:
-            return
-            
-        self.metrics["total_requests"] += 1
-        self.metrics["total_processing_time"] += processing_time
-        
-        if success:
-            self.metrics["successful_requests"] += 1
-        else:
-            self.metrics["failed_requests"] += 1
-            
-        self.metrics["avg_processing_time"] = (
-            self.metrics["total_processing_time"] / self.metrics["total_requests"]
+        # Call LLM with prompt
+        response = self.llm_client.chat.completions.create(
+            model="gpt-4",  # or any appropriate model
+            messages=[{"role": "system", "content": prompt}],
+            temperature=0.2
         )
+        
+        # Extract content
+        content = response.choices[0].message.content
+        
+        # Try to parse JSON output
+        try:
+            start_idx = content.find('{')
+            end_idx = content.rfind('}') + 1
+            json_content = content[start_idx:end_idx]
+            return json.loads(json_content)
+        except Exception as e:
+            self.logger.error(f"Error parsing LLM response: {e}")
+            # Fallback: return just the reasoning and answer without tool calls
+            return {
+                "reasoning": content,
+                "answer": content
+            }
+    
+    def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]], input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute the tool calls requested by the agent's reasoning.
+        
+        Args:
+            tool_calls: List of tool calls with name and parameters
+            input_data: Original input data for context
+            
+        Returns:
+            Dictionary mapping tool names to their results
+        """
+        results = {}
+        
+        for call in tool_calls:
+            tool_name = call["tool_name"]
+            parameters = call["parameters"]
+            
+            # Find the tool
+            tool = next((t for t in self.tools if t.name == tool_name), None)
+            if not tool:
+                results[tool_name] = {
+                    "error": f"Tool '{tool_name}' not found",
+                    "success": False
+                }
+                continue
+            
+            # Execute the tool
+            try:
+                # Add common parameters like image_path if needed
+                if "image_path" in input_data and "image_path" not in parameters:
+                    parameters["image_path"] = input_data["image_path"]
+                    
+                tool_result = tool.run(**parameters)
+                results[tool_name] = tool_result
+                
+                # Update metrics
+                self.metrics["tool_usages"][tool_name] = self.metrics["tool_usages"].get(tool_name, 0) + 1
+                
+            except Exception as e:
+                self.logger.error(f"Error executing tool '{tool_name}': {str(e)}")
+                results[tool_name] = {
+                    "error": str(e),
+                    "success": False
+                }
+        
+        return results
+    
+    def _synthesize_answer(self, reasoning_result: Dict[str, Any], input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Synthesize final answer based on reasoning and tool results.
+        
+        Args:
+            reasoning_result: The reasoning and tool results
+            input_data: Original input data
+            
+        Returns:
+            Final answer and metadata
+        """
+        # If there are no tool results, just return the reasoning answer
+        if "tool_results" not in reasoning_result:
+            return {
+                "answer": reasoning_result.get("answer", ""),
+                "reasoning": reasoning_result.get("reasoning", ""),
+                "confidence": 0.9  # Default high confidence when no tools used
+            }
+        
+        # Create a prompt for synthesizing the answer
+        synthesis_prompt = f"""
+        You previously analyzed this request:
+        {json.dumps(input_data, indent=2)}
+        
+        Your reasoning was:
+        {reasoning_result['reasoning']}
+        
+        You used tools and got these results:
+        {json.dumps(reasoning_result['tool_results'], indent=2)}
+        
+        Please synthesize a final answer based on all this information.
+        Response format:
+        {{
+            "answer": "Your comprehensive final answer",
+            "confidence": 0.XX,  # Your confidence from 0.0 to 1.0
+            "explanation": "Brief explanation of your confidence assessment"
+        }}
+        """
+        
+        # Call LLM for synthesis
+        response = self.llm_client.chat.completions.create(
+            model="gpt-4",  # or any appropriate model
+            messages=[{"role": "system", "content": synthesis_prompt}],
+            temperature=0.2
+        )
+        
+        # Extract and parse content
+        content = response.choices[0].message.content
+        try:
+            start_idx = content.find('{')
+            end_idx = content.rfind('}') + 1
+            json_content = content[start_idx:end_idx]
+            synthesis = json.loads(json_content)
+            
+            # Create the final result with original reasoning and tool results
+            final_result = {
+                "answer": synthesis.get("answer", ""),
+                "confidence": synthesis.get("confidence", 0.5),
+                "reasoning": reasoning_result.get("reasoning", ""),
+                "tool_results": reasoning_result.get("tool_results", {}),
+                "explanation": synthesis.get("explanation", "")
+            }
+            
+            return final_result
+            
+        except Exception as e:
+            self.logger.error(f"Error parsing synthesis response: {e}")
+            # Fallback
+            return {
+                "answer": reasoning_result.get("answer", content),
+                "reasoning": reasoning_result.get("reasoning", ""),
+                "tool_results": reasoning_result.get("tool_results", {}),
+                "confidence": 0.5
+            }
     
     def get_metrics(self) -> Dict[str, Any]:
-        """
-        Lấy metrics hiệu suất của agent.
-        
-        Returns:
-            Dict chứa metrics
-        """
+        """Get agent metrics."""
         return self.metrics.copy()
-    
-    def export_metrics(self, output_path: str):
-        """
-        Xuất metrics ra file JSON.
-        
-        Args:
-            output_path: Đường dẫn file output
-        """
-        try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            with open(output_path, 'w') as f:
-                json.dump(self.metrics, f, indent=2)
-            self.logger.info(f"Metrics đã được xuất ra {output_path}")
-        except Exception as e:
-            self.logger.error(f"Lỗi khi xuất metrics: {str(e)}")
-    
-    def remember(self, key: str, value: Any):
-        """
-        Lưu trữ thông tin trong bộ nhớ ngắn hạn.
-        
-        Args:
-            key: Khóa để lưu trữ
-            value: Giá trị cần lưu
-        """
-        if not self.config.memory_enabled:
-            return
-            
-        self.short_term_memory[key] = {
-            "value": value,
-            "timestamp": time.time()
-        }
-        self.logger.debug(f"Đã lưu '{key}' vào bộ nhớ ngắn hạn")
-    
-    def recall(self, key: str) -> Optional[Any]:
-        """
-        Truy xuất thông tin từ bộ nhớ ngắn hạn.
-        
-        Args:
-            key: Khóa cần truy xuất
-            
-        Returns:
-            Giá trị đã lưu hoặc None nếu không tìm thấy
-        """
-        if not self.config.memory_enabled:
-            return None
-            
-        memory_item = self.short_term_memory.get(key)
-        if memory_item:
-            return memory_item["value"]
-        return None
-    
-    def clear_memory(self):
-        """Xóa bộ nhớ ngắn hạn."""
-        self.short_term_memory.clear()
-        self.logger.debug("Đã xóa bộ nhớ ngắn hạn")
-    
-    def __str__(self) -> str:
-        """String representation của agent."""
-        status = "Đã khởi tạo" if self.initialized else "Chưa khởi tạo"
-        return f"{self.name} Agent ({status})"

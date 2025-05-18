@@ -26,7 +26,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from orchestrator.main import MedicalOrchestrator, OrchestratorConfig
 from agents.detector import MedicalDetectorAgent, DetectorConfig
 from agents.classifier_1 import MedicalClassifierAgent1, ClassifierConfig1
-from agents.classifier_2 import MedicalClassifierAgent2, ClassifierConfig2
+from agents.classifier import MedicalClassifierAgent, ClassifierConfig
 from agents.vqa import MedicalVQAAgent, VQAAgentConfig
 from agents.rag import MedicalRAGAgent, RAGConfig
 

@@ -28,7 +28,7 @@ logging.basicConfig(
 # Import các agent
 from agents.detector import DetectorAgent, DetectorAgentConfig
 from agents.classifier_1 import MedicalClassifierAgent1, ClassifierConfig1
-from agents.classifier_2 import MedicalClassifierAgent2, ClassifierConfig2
+from agents.classifier import MedicalClassifierAgent, ClassifierConfig
 from agents.vqa import MedicalVQAAgent, VQAAgentConfig
 # from agents.rag import MedicalRAGAgent, RAGConfig  # RAG Agent tạm thời bị vô hiệu hóa do lỗi thư viện
 
@@ -859,12 +859,14 @@ if __name__ == "__main__":
     classifier1 = MedicalClassifierAgent1(classifier1_config)
     orchestrator.register_agent("classifier_1", classifier1)
     
-    from agents.classifier_2 import MedicalClassifierAgent2, ClassifierConfig2
-    classifier2_config = ClassifierConfig2(
-        model_path="models/modality_classifier.pt"  # Thay đổi đường dẫn model nếu cần
+    from agents.classifier import MedicalClassifierAgent, ClassifierConfig
+    classifier_config = ClassifierConfig(
+        model_path="models/modality_classifier.pt",
+        class_names=["BLI", "WLI", "FICE", "LCI"],
+        device="cuda"
     )
-    classifier2 = MedicalClassifierAgent2(classifier2_config)
-    orchestrator.register_agent("classifier_2", classifier2)
+    classifier = MedicalClassifierAgent(classifier_config)
+    orchestrator.register_agent("classifier_2", classifier)
     
     from agents.vqa import MedicalVQAAgent, VQAAgentConfig
     vqa_config = VQAAgentConfig(

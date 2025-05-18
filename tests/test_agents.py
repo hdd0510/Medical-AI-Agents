@@ -25,8 +25,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import các agent để test
 from agents.detector import DetectorAgent, DetectorAgentConfig
-from agents.classifier_1 import MedicalClassifierAgent1, ClassifierConfig1
-from agents.classifier_2 import MedicalClassifierAgent2, ClassifierConfig2
+from agents.classifier import MedicalClassifierAgent, ClassifierConfig
 from agents.vqa import MedicalVQAAgent, VQAAgentConfig
 # from agents.rag import MedicalRAGAgent, RAGConfig  # RA`G Agent chưa có weight
 from agents.base_agent import BaseAgent, BaseAgentConfig
@@ -133,29 +132,25 @@ class DetectorAgentTest(unittest.TestCase):
         # self.assertIn('error', result)
 
 
-class ClassifierAgent1Test(unittest.TestCase):
-    """Test case cho MedicalClassifierAgent1."""
+class ClassifierAgentTest(unittest.TestCase):
+    """Test case cho MedicalClassifierAgent."""
     
     def setUp(self):
         """Thiết lập cho test."""
-        self.config = ClassifierConfig1(
-            name="MedicalClassifierAgent1",
-            model_path=CLASSIFIER1_WEIGHTS,
+        self.config = ClassifierConfig(
+            name="MedicalClassifierAgent",
+            model_path="test_model.pt",
+            class_names=["class1", "class2"],
             device="cpu"
         )
-        # Sử dụng mock để không cần load model thật
-        with patch('agents.classifier_1.classifier_agent_1.MedicalClassifierAgent1.initialize', return_value=True):
-            self.agent = MedicalClassifierAgent1(self.config)
-            self.agent.model = MagicMock()
-            self.agent.initialized = True
-            # Thiết lập class_names sau khi khởi tạo
-            self.agent.class_names = ["WLI", "BLI", "LCI"]
+        with patch('agents.classifier.classifier_agent.MedicalClassifierAgent.initialize', return_value=True):
+            self.agent = MedicalClassifierAgent(self.config)
     
-    def test_classifier1_initialization(self):
-        """Kiểm tra khởi tạo của ClassifierAgent1."""
-        self.assertEqual(self.agent.name, "MedicalClassifierAgent1")
-        self.assertEqual(len(self.agent.class_names), 3)
-        self.assertEqual(self.agent.config.model_path, CLASSIFIER1_WEIGHTS)
+    def test_classifier_initialization(self):
+        """Kiểm tra khởi tạo của MedicalClassifierAgent."""
+        self.assertEqual(self.agent.name, "MedicalClassifierAgent")
+        self.assertEqual(len(self.agent.class_names), 2)
+        self.assertEqual(self.agent.config.model_path, "test_model.pt")
     
     def test_process_image(self):
         """Kiểm tra process hình ảnh."""
@@ -167,11 +162,10 @@ class ClassifierAgent1Test(unittest.TestCase):
             # Mock kết quả từ classify
             mock_classify_result = {
                 "predictions": [
-                    {"class_id": 0, "confidence": 0.1, "class_name": "WLI"},
-                    {"class_id": 1, "confidence": 0.8, "class_name": "BLI"},
-                    {"class_id": 2, "confidence": 0.1, "class_name": "LCI"}
+                    {"class_id": 0, "confidence": 0.1, "class_name": "class1"},
+                    {"class_id": 1, "confidence": 0.8, "class_name": "class2"}
                 ],
-                "top_prediction": {"class_id": 1, "confidence": 0.8, "class_name": "BLI"},
+                "top_prediction": {"class_id": 1, "confidence": 0.8, "class_name": "class2"},
                 "image_size": (224, 224)
             }
             
@@ -185,7 +179,7 @@ class ClassifierAgent1Test(unittest.TestCase):
             self.assertIn('success', result)
             self.assertTrue(result['success'])
             self.assertIn('class_name', result)
-            self.assertEqual(result['class_name'], "BLI")
+            self.assertEqual(result['class_name'], "class2")
             self.assertIn('confidence', result)
             self.assertGreater(result['confidence'], 0.7)
 
@@ -403,8 +397,8 @@ class IntegrationTests(unittest.TestCase):
             'count': 1
         }
         
-        self.classifier1_agent = MagicMock()
-        self.classifier1_agent.process.return_value = {
+        self.classifier_agent = MagicMock()
+        self.classifier_agent.process.return_value = {
             'success': True,
             'class_id': 1,
             'class_name': 'BLI',
@@ -459,7 +453,7 @@ class IntegrationTests(unittest.TestCase):
             detection_result = self.detector_agent.process(tmp.name)
             
             # Chạy classifier 1
-            classifier1_result = self.classifier1_agent.process(tmp.name)
+            classifier_result = self.classifier_agent.process(tmp.name)
             
             # Chạy classifier 2
             classifier2_result = self.classifier2_agent.process(tmp.name)
@@ -467,7 +461,7 @@ class IntegrationTests(unittest.TestCase):
             # Kết hợp kết quả
             combined_result = {
                 "detection": detection_result,
-                "modality": classifier1_result,
+                "modality": classifier_result,
                 "region": classifier2_result
             }
             
@@ -478,7 +472,7 @@ class IntegrationTests(unittest.TestCase):
             
             # Tạo query dựa trên kết quả phân tích
             if detection_result["count"] > 0 and classifier2_result["class_name"] == "Colon":
-                query = f"Describe the polyp found in the {classifier2_result['class_name']} using {classifier1_result['class_name']} imaging."
+                query = f"Describe the polyp found in the {classifier2_result['class_name']} using {classifier_result['class_name']} imaging."
                 
                 # Chạy VQA với context
                 vqa_result = self.vqa_agent.process(

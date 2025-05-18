@@ -25,8 +25,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import orchestrator và các agent để test
 from orchestrator.main import MedicalOrchestrator, OrchestratorConfig
 from agents.detector import MedicalDetectorAgent, DetectorConfig
-from agents.classifier_1 import MedicalClassifierAgent1, ClassifierConfig1
-from agents.classifier_2 import MedicalClassifierAgent2, ClassifierConfig2
+from agents.classifier import MedicalClassifierAgent, ClassifierConfig
 from agents.vqa import MedicalVQAAgent, VQAAgentConfig
 from agents.rag import MedicalRAGAgent, RAGConfig
 
@@ -88,7 +87,7 @@ def setup_test_dirs():
 def mock_all_agents():
     """Mock tất cả các agents cho testing."""
     with patch('agents.detector.MedicalDetectorAgent._load_model'), \
-         patch('agents.classifier_1.MedicalClassifierAgent1._load_model'), \
+         patch('agents.classifier.MedicalClassifierAgent._load_model'), \
          patch('agents.classifier_2.MedicalClassifierAgent2._load_model'), \
          patch('agents.vqa.MedicalVQAAgent._load_model'), \
          patch('agents.rag.MedicalRAGAgent._load_model'):
@@ -100,10 +99,10 @@ def mock_all_agents():
             confidence_threshold=0.5
         )
         
-        classifier1_config = ClassifierConfig1(
-            model_path=IntegrationTestConfig.CLASSIFIER1_MODEL_PATH,
-            device="cpu",
-            class_names=IntegrationTestConfig.CLASSIFIER1_CLASSES
+        classifier_config = ClassifierConfig(
+            model_path="test_model.pt",
+            class_names=["class1", "class2"],
+            device="cpu"
         )
         
         classifier2_config = ClassifierConfig2(
@@ -126,7 +125,7 @@ def mock_all_agents():
         
         # Tạo các agents
         detector_agent = MedicalDetectorAgent(detector_config)
-        classifier1_agent = MedicalClassifierAgent1(classifier1_config)
+        classifier_agent = MedicalClassifierAgent(classifier_config)
         classifier2_agent = MedicalClassifierAgent2(classifier2_config)
         vqa_agent = MedicalVQAAgent(vqa_config)
         rag_agent = MedicalRAGAgent(rag_config)
@@ -138,7 +137,7 @@ def mock_all_agents():
             'detection_count': 1
         })
         
-        classifier1_agent.process = MagicMock(return_value={
+        classifier_agent.process = MagicMock(return_value={
             'success': True,
             'class_id': 1,
             'class_name': 'BLI',
@@ -167,7 +166,7 @@ def mock_all_agents():
         
         return {
             "detector": detector_agent,
-            "classifier_1": classifier1_agent,
+            "classifier": classifier_agent,
             "classifier_2": classifier2_agent,
             "vqa": vqa_agent,
             "rag": rag_agent
